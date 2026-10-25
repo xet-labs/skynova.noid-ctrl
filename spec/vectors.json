@@ -1,0 +1,111 @@
+{
+  "_comment": "Canonical protocol test vectors. Source: vault note 10-specs/protocol-v0.md section 8. Edit here, then run scripts/gen_vectors_h.py (C) and copy to the cmd repo spec/. Hex strings, no spaces.",
+  "crc16": {
+    "text": "123456789",
+    "check": "29b1"
+  },
+  "cobs": [
+    {
+      "in": "00",
+      "out": "0101"
+    },
+    {
+      "in": "0000",
+      "out": "010101"
+    },
+    {
+      "in": "11220033",
+      "out": "0311220233"
+    },
+    {
+      "in": "11223344",
+      "out": "0511223344"
+    },
+    {
+      "in": "11000000",
+      "out": "0211010101"
+    }
+  ],
+  "frames": [
+    {
+      "name": "ping host_t_ms=1000 seq=1",
+      "type": 9,
+      "msg": 1,
+      "seq": 1,
+      "ack": 0,
+      "payload": "e8030000",
+      "body": "01090100010000000400e8030000daae",
+      "wire": "000401090102010101020403e8030103daae00"
+    },
+    {
+      "name": "pong echo=1000 node_t=5000 hazard=0 seq=1 ack=1",
+      "type": 10,
+      "msg": 1,
+      "seq": 1,
+      "ack": 1,
+      "payload": "e80300008813000000",
+      "body": "010a0100010001000900e8030000881300000073eb",
+      "wire": "0004010a0102010201020903e8030103881301010373eb00"
+    },
+    {
+      "name": "cmd drive v=200 w=0 ttl=300 seq=2",
+      "type": 3,
+      "msg": 16,
+      "seq": 2,
+      "ack": 0,
+      "payload": "c80000002c01",
+      "body": "01031000020000000600c80000002c010581",
+      "wire": "000401031002020101020602c80101052c01058100"
+    },
+    {
+      "name": "cmd drive v=-100 w=45 ttl=300 seq=3",
+      "type": 3,
+      "msg": 16,
+      "seq": 3,
+      "ack": 0,
+      "payload": "9cff2d002c01",
+      "body": "010310000300000006009cff2d002c0122a0",
+      "wire": "0004010310020301010206049cff2d052c0122a000"
+    },
+    {
+      "name": "ack for host seq 2, node seq 7",
+      "type": 4,
+      "msg": 16,
+      "seq": 7,
+      "ack": 2,
+      "payload": "",
+      "body": "010410000700020000000e0a",
+      "wire": "0004010410020702020101030e0a00"
+    },
+    {
+      "name": "nack hazard_blocked mask=3 for seq 4, node seq 8",
+      "type": 5,
+      "msg": 16,
+      "seq": 8,
+      "ack": 4,
+      "payload": "040300",
+      "body": "010510000800040003000403008bb9",
+      "wire": "0004010510020802040203030403038bb900"
+    },
+    {
+      "name": "evt cliff mask=1 seq=9",
+      "type": 7,
+      "msg": 1,
+      "seq": 9,
+      "ack": 0,
+      "payload": "01",
+      "body": "010701000900000001000142f7",
+      "wire": "0004010701020901010201040142f700"
+    },
+    {
+      "name": "hello single fw1.0 proto1 poweron chip a0b1c2d3e4f5 boot1 caps00ff",
+      "type": 1,
+      "msg": 1,
+      "seq": 0,
+      "ack": 0,
+      "payload": "03ff0001000101a0b1c2d3e4f5010000000000",
+      "body": "0101010000000000130003ff0001000101a0b1c2d3e4f5010000000000a3e4",
+      "wire": "00040101010101010102130303ff02010a0101a0b1c2d3e4f5010101010103a3e400"
+    }
+  ]
+}
