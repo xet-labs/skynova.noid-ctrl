@@ -145,7 +145,8 @@ static void safety_task(void *arg)
             s_low_batt_next_ms = now_ms() + LOW_BATT_REPEAT_MS;
             hal_buzzer_play(BUZ_LOW_BATTERY);
         }
-        vTaskDelayUntil(&last, pdMS_TO_TICKS(SAFETY_LOOP_MS));
+        const TickType_t ticks = pdMS_TO_TICKS(SAFETY_LOOP_MS);
+        vTaskDelayUntil(&last, ticks > 0 ? ticks : 1);
     }
 }
 
@@ -159,7 +160,8 @@ static void motion_task(void *arg)
         skb_motion_step(&s_base, now_ms(), &out);
         hal_motor_apply(&out);
         unlock();
-        vTaskDelayUntil(&last, pdMS_TO_TICKS(MOTION_LOOP_MS));
+        const TickType_t ticks = pdMS_TO_TICKS(MOTION_LOOP_MS);
+        vTaskDelayUntil(&last, ticks > 0 ? ticks : 1);
     }
 }
 
