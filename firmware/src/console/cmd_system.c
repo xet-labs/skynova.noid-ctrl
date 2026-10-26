@@ -1,5 +1,5 @@
 /*
- * cmd_system.c - read-only console commands: version, uptime, status, pins.
+ * cmd_system.c - read-only console commands: version, uptime, pins. (`status` moved to cmd_base.c.)
  *
  * Purpose : the first four commands, so a person can check the board is alive and wired
  *           as expected. All tier 0 (always available, they change nothing).
@@ -22,6 +22,7 @@
 #include "app_config.h"
 #include "board/board_pins.h"
 #include "console/console_uart.h"
+#include "core/chan.h"
 #include "skynoid_console.h"
 
 static int cmd_version(int argc, char **argv, console_out_t *out)
@@ -30,7 +31,8 @@ static int cmd_version(int argc, char **argv, console_out_t *out)
     console_printf(out, "skynoid fw %d.%d proto %d role single\n", FW_MAJOR, FW_MINOR, PROTO_VERSION);
     console_printf(out, "idf %s, built %s %s\n", esp_get_idf_version(), __DATE__, __TIME__);
     console_printf(out, "flags link_uart=%d console_uart=%d actuate=%d log_level=%d\n",
-                   SKYNOID_LINK_UART, SKYNOID_CONSOLE_UART, SKYNOID_CONSOLE_ACTUATE, SKYNOID_LOG_LEVEL);
+                   UART_LINK_NUM, UART_CONSOLE_NUM, SKYNOID_CONSOLE_ACTUATE, SKYNOID_LOG_LEVEL);
+    console_printf(out, "channels %s\n", chan_describe());
     console_printf(out, "reset_reason %d\n", (int)esp_reset_reason());
     return 0;
 }
@@ -40,13 +42,6 @@ static int cmd_uptime(int argc, char **argv, console_out_t *out)
     (void)argc; (void)argv;
     const int64_t secs = esp_timer_get_time() / 1000000;
     console_printf(out, "uptime %" PRId64 " s\n", secs);
-    return 0;
-}
-
-static int cmd_status(int argc, char **argv, console_out_t *out)
-{
-    (void)argc; (void)argv;
-    console_printf(out, "state n/a (base node not connected to the console yet)\n");
     return 0;
 }
 
@@ -62,7 +57,6 @@ static int cmd_pins(int argc, char **argv, console_out_t *out)
 static const console_cmd_t SYSTEM_CMDS[] = {
     {"version", "firmware, protocol, IDF version, build flags", cmd_version, 0},
     {"uptime",  "seconds since boot",                           cmd_uptime,  0},
-    {"status",  "node state (placeholder until the base node is connected)", cmd_status, 0},
     {"pins",    "every GPIO role from board_pins.h",            cmd_pins,    0},
 };
 

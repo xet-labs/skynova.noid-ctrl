@@ -53,7 +53,8 @@ static uint8_t s_ir_pos;
 static int32_t s_batt_avg_mv;            /* 0 = no reading yet */
 static int s_led_last = -1;
 static uint32_t s_low_batt_next_ms;
-static bool s_low_batt_active;
+static bool s_low_batt_active;           /* LOW and still LOW: repeat the low-battery beep */
+static bool s_crit_batt_active;          /* CRIT: BUZ_CRITICAL runs until power cycle; no other beep may replace it */
 
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static void lock(void)   { xSemaphoreTake(s_lock, portMAX_DELAY); }
@@ -107,9 +108,12 @@ static void deliver_events(void)
             hal_buzzer_play(BUZ_LOW_BATTERY);
         } else if (ev.id == SKB_EV_BATT_CRIT) {
             s_low_batt_active = false;
-            hal_buzzer_play(BUZ_CRITICAL);
+            s_crit_batt_active = true;
+            hal_buzzer_play(BUZ_CRITICAL);                    /* 1 s on / 1 s off, never ends by itself */
         } else if (ev.id == SKB_EV_NODE_FAULT && ev.a != SKB_FAULT_BATT_CRIT) {
-            hal_buzzer_play(BUZ_ERROR);
+            if (!s_crit_batt_active) { hal_buzzer_play(BUZ_ERROR); }   /* an error beep would cut the critical alarm */
+        } else if (ev.id == SKB_EV_SENSOR_FAULT && ev.a == SKB_SENSOR_BATT) {
+            if (!s_crit_batt_active) { hal_buzzer_play(BUZ_ERROR); }   /* battery sensor gone: no protection, say so once */
         }
         if (s_sink) { s_sink(&ev); }
     }
@@ -139,8 +143,10 @@ static void safety_task(void *arg)
         skb_safety_step(&s_base, ir, s_batt_avg_mv, ma, now_ms());
         if (skb_take_reflex(&s_base)) { hal_motor_brake_now(); }      /* R1 / R3 / R5: no queue, no host */
         update_led();
+        const bool batt_ok = (s_base.batt.state == SKL_BATT_OK);
         unlock();
         deliver_events();
+        if (batt_ok) { s_low_batt_active = false; }          /* pack recovered above low + hysteresis: stop beeping */
         if (s_low_batt_active && (int32_t)(now_ms() - s_low_batt_next_ms) >= 0) {
             s_low_batt_next_ms = now_ms() + LOW_BATT_REPEAT_MS;
             hal_buzzer_play(BUZ_LOW_BATTERY);
@@ -170,10 +176,12 @@ static void power_task(void *arg)
     (void)arg;
     int32_t sum = 0;
     int n = 0;
+    int fails = 0;                                                /* consecutive failed or zero reads */
     TickType_t last = xTaskGetTickCount();
     for (;;) {
         int32_t mv;
         if (hal_ina219_read_mv(&mv) && mv > 0) {
+            fails = 0;
             sum += mv;
             if (++n >= 20) {                                      /* 20 x 50 ms = 1 s average */
                 lock();
@@ -182,6 +190,13 @@ static void power_task(void *arg)
                 sum = 0;
                 n = 0;
             }
+        } else if (++fails >= 20) {                               /* 1 s without a good read: forget the old average, */
+            fails = 0;                                            /* so a sensor that died mid-run cannot keep a stale */
+            sum = 0;                                              /* healthy voltage alive (the logic then sees 0 = no reading) */
+            n = 0;
+            lock();
+            s_batt_avg_mv = 0;
+            unlock();
         }
         vTaskDelayUntil(&last, pdMS_TO_TICKS(50));
     }
@@ -192,6 +207,16 @@ void base_start(void)
 {
     s_lock = xSemaphoreCreateMutex();
     skp_reset(&s_params);
+#ifdef SKYNOID_TEST_BATT_LOW_MV     /* bench test of the beeps without draining the pack: see app_config.h */
+    if (skp_set(&s_params, SKP_BATT_LOW_MV, SKYNOID_TEST_BATT_LOW_MV) != SKP_OK) {
+        ESP_LOGW(TAG, "SKYNOID_TEST_BATT_LOW_MV rejected (range 9000..12600, must stay above crit)");
+    }
+#endif
+#ifdef SKYNOID_TEST_BATT_CRIT_MV
+    if (skp_set(&s_params, SKP_BATT_CRIT_MV, SKYNOID_TEST_BATT_CRIT_MV) != SKP_OK) {
+        ESP_LOGW(TAG, "SKYNOID_TEST_BATT_CRIT_MV rejected (range 8500..12000, must stay below low)");
+    }
+#endif
     skb_cfg_t cfg;
     skb_cfg_default(&cfg);
     cfg.pol = (skl_polarity_t)SKYNOID_IR_POLARITY;
@@ -202,6 +227,7 @@ void base_start(void)
     cfg.cliff_required = SKYNOID_CLIFF_REQUIRED;
     cfg.uncal_cap_pct = UNCAL_DUTY_CAP_PCT;
     cfg.brake_hold_ms = BRAKE_HOLD_MS;
+    cfg.batt_stale_ms = SKYNOID_BATT_STALE_MS;
     skb_init(&s_base, &s_params, &cfg);
 
     hal_adc_init();

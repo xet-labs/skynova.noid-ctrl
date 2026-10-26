@@ -26,11 +26,11 @@
 #include "esp_timer.h"
 
 #include "app_config.h"
+#include "core/chan.h"
 #include "core/logger.h"
 #include "skynoid_core.h"
 #include "skynoid_logtext.h"
 
-#define LOG_UART      UART_NUM_0
 #define REC_TEXT_MAX  160
 #define FR_CAP        2048          /* flight recorder size in bytes */
 #define TASK_STACK    3072
@@ -113,11 +113,11 @@ static int log_hook(const char *fmt, va_list ap)
 }
 
 /* ---- consumer: the logger task ---------------------------------------------------------- */
-static void uart_out(const char *text, size_t len, char *prev)
+static void uart_out(skc_ch_t ch, const char *text, size_t len, char *prev)
 {
     char buf[2 * REC_TEXT_MAX + 2];
     const size_t n = lt_to_crlf(buf, text, len, prev);
-    uart_write_bytes(LOG_UART, buf, n);
+    chan_write(ch, buf, n);
 }
 
 static void logger_task(void *arg)
@@ -127,8 +127,10 @@ static void logger_task(void *arg)
     log_rec_t r;
     for (;;) {
         if (xQueueReceive(s_queue, &r, portMAX_DELAY) != pdTRUE) { continue; }
-        if (r.raw == 2) { uart_write_bytes(LOG_UART, r.text, r.len); continue; }      /* binary: untouched */
-        if (r.raw) { uart_out(r.text, r.len, &prev); continue; }
+        /* Shared port: everything leaves on the one UART. Separate: binary to the link UART, text and logs to the console UART. */
+        const skc_ch_t ch = skc_channel_for(CHAN_SHARED, r.raw);
+        if (r.raw == 2) { chan_write(ch, r.text, r.len); continue; }      /* binary: untouched */
+        if (r.raw) { uart_out(ch, r.text, r.len, &prev); continue; }
 
         if (xSemaphoreTake(s_fr_lock, pdMS_TO_TICKS(10)) == pdTRUE) {      /* record everything */
             skl_ring_put(&s_fr, s_fr_buf, FR_CAP, (const uint8_t *)r.text, r.len);
@@ -138,8 +140,8 @@ static void logger_task(void *arg)
         int lvl = lt_level_from_text(r.text);
         if (lvl < 0) { lvl = 2; }                                           /* unknown text counts as info */
         if (lvl <= s_level) {
-            uart_out(r.text, r.len, &prev);
-            uart_out("\n", 1, &prev);
+            uart_out(ch, r.text, r.len, &prev);
+            uart_out(ch, "\n", 1, &prev);
         }
     }
 }

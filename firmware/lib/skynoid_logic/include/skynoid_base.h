@@ -47,6 +47,12 @@ enum { SKB_NACK_NOT_ARMED = 3, SKB_NACK_HAZARD_BLOCKED = 4, SKB_NACK_ESTOPPED = 
        SKB_NACK_INVALID_ARG = 6, SKB_NACK_BUSY = 7 };
 enum { SKB_FAULT_NONE = 0, SKB_FAULT_BATT_CRIT = 1, SKB_FAULT_STALL_HARD = 2 };
 
+/* SENSOR_FAULT event (id 10): payload a = sensor index, b = reason. Indexes 0..3 are the IR sensors
+ * (reasons 1 stuck, 2 saturated, from the cliff logic). The battery sensor (INA219) is index 4 and
+ * reports reason 3 = no reading (added 2026-10-26, claude-chat_a7d3; no new message id or field). */
+enum { SKB_SENSOR_BATT = 4 };
+enum { SKB_SENSOR_REASON_STUCK = 1, SKB_SENSOR_REASON_SATURATED = 2, SKB_SENSOR_REASON_NO_READING = 3 };
+
 /* Event ids = the EVT msg ids of protocol-v0 section 6. */
 enum { SKB_EV_CLIFF = 1, SKB_EV_HAZARD_CLEARED = 2, SKB_EV_BATT_LOW = 3, SKB_EV_BATT_CRIT = 4,
        SKB_EV_DRIVE_EXPIRED = 5, SKB_EV_STALL = 6, SKB_EV_NODE_FAULT = 8, SKB_EV_LINK_LOST = 9,
@@ -72,6 +78,9 @@ typedef struct {
     uint32_t brake_hold_ms;
     uint32_t cal_window_ms;                /* baseline averaging window (200) */
     uint32_t stall_soft_ms, stall_hard_ms; /* 300 and 50 */
+    uint32_t batt_stale_ms;                /* no battery reading for this long = sensor fault (hazard bit 4, no
+                                            * motion). 0 = check off, which is the library default so the old
+                                            * tests keep their meaning; src/base.c sets SKYNOID_BATT_STALE_MS. */
 } skb_cfg_t;
 
 typedef struct {
@@ -93,6 +102,9 @@ typedef struct {
     skl_batt_t         batt;
     skl_batt_cfg_t     bcfg;
     int32_t            batt_mv, motor_ma;
+    bool               have_batt_ref;      /* batt_ref_ms is valid (first safety step seen) */
+    bool               batt_missing;       /* latched while no reading for cfg.batt_stale_ms; clears on a reading */
+    uint32_t           batt_ref_ms;        /* time of the last good reading, or of the first safety step */
 
     skl_mailbox_t      mb;
     skl_motion_t       motion;

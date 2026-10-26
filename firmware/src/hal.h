@@ -8,6 +8,7 @@
 #define HAL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include "skynoid_logic.h"
 
@@ -22,6 +23,7 @@ void hal_adc_init(void);
 int  hal_adc_read(int adc1_channel);               /* raw 0..4095, or -1 on error */
 void hal_i2c_init(void);
 bool hal_i2c_probe(uint8_t addr);                  /* true if a device acknowledges the address */
+bool hal_i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len);   /* write reg, read len bytes; false on any error */
 bool hal_ina219_read_mv(int32_t *mv);              /* bus voltage register, (reg >> 3) * 4 mV */
 
 /* ---- buzzer and status LED ----------------------------------------------------- */

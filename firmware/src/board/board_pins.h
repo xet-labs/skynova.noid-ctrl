@@ -31,8 +31,10 @@
 /* ---- misc outputs and inputs ----------------------------------------------- */
 #define PIN_BUZZER         23
 #define PIN_STATUS_LED      2
-#define PIN_CONSOLE_TX      5   /* UART2, only used with SKYNOID_CONSOLE_UART=2 */
-#define PIN_CONSOLE_RX     15
+#define PIN_UART2_TX       5   /* UART2 default pair (step 1.7): the console when UART_CONSOLE_NUM=2, or the link when UART_LINK_NUM=2 */
+#define PIN_UART2_RX      15
+#define PIN_CONSOLE_TX     PIN_UART2_TX   /* old names, kept as aliases (not in the pin lists below) */
+#define PIN_CONSOLE_RX     PIN_UART2_RX
 #define PIN_PCA9685_OE      4   /* upper functions; not used yet */
 #define PIN_TOUCH_HEAD     13
 #define PIN_TOUCH_HAND_L   18
@@ -47,12 +49,17 @@
  * Trick: the sum of distinct powers of two equals their OR; a repeated pin makes
  * the sum larger. */
 #define SK_PINBIT(g) (1ULL << (g))
-#define SK_ALL_PINS(X) \
+/* SK_ROLE_PINS: every pin that belongs to a robot function. SK_ALL_PINS adds the UART pairs.
+ * UART1 has no pair here on purpose (step 1.7): a UART1 channel must be given explicit pins, and
+ * core/chan_cfg.h refuses a pin listed in SK_ROLE_PINS. */
+#define SK_ROLE_PINS(X) \
     X(PIN_MOTOR_L_RPWM) X(PIN_MOTOR_L_LPWM) X(PIN_MOTOR_R_RPWM) X(PIN_MOTOR_R_LPWM) X(PIN_MOTOR_EN) \
     X(PIN_IR_FRONT_LEFT) X(PIN_IR_FRONT_RIGHT) X(PIN_IR_REAR_LEFT) X(PIN_IR_REAR_RIGHT) \
-    X(PIN_MOTOR_IS) X(PIN_ACS712) X(PIN_BUZZER) X(PIN_STATUS_LED) X(PIN_CONSOLE_TX) X(PIN_CONSOLE_RX) \
+    X(PIN_MOTOR_IS) X(PIN_ACS712) X(PIN_BUZZER) X(PIN_STATUS_LED) \
     X(PIN_PCA9685_OE) X(PIN_TOUCH_HEAD) X(PIN_TOUCH_HAND_L) X(PIN_TOUCH_HAND_R) X(PIN_TOUCH_EXTRA) \
-    X(PIN_I2C_SDA) X(PIN_I2C_SCL) X(PIN_UART0_TX) X(PIN_UART0_RX)
+    X(PIN_I2C_SDA) X(PIN_I2C_SCL)
+#define SK_ALL_PINS(X) \
+    SK_ROLE_PINS(X) X(PIN_UART2_TX) X(PIN_UART2_RX) X(PIN_UART0_TX) X(PIN_UART0_RX)
 #define SK_SUM(p) + SK_PINBIT(p)
 #define SK_OR(p)  | SK_PINBIT(p)
 #define SK_NEVER_USE_MASK (SK_PINBIT(0) | SK_PINBIT(12) | (0x3FULL << 6))   /* boot strap, strap, flash 6..11 */

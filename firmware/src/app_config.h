@@ -9,16 +9,28 @@
 
 #include "skynoid_logic.h"
 
-/* ---- console and link channels ------------------------------------------- */
-#ifndef SKYNOID_LINK_UART
-#define SKYNOID_LINK_UART 0          /* UART carrying the framed link (0 = USB bridge) */
+/* ---- console and link channels (step 1.7, docs/steps/step-1.7-uart-channels.md) -------------------
+ * Every default is an #ifndef: override with -D in platformio.ini. Pin defaults and all the build-time
+ * checks live in core/chan_cfg.h (included below, after the numbers are known).
+ * Shared mode (same UART number for both) is what the firmware always did: one port, frames and text. */
+#ifndef UART_LINK_NUM
+#define UART_LINK_NUM 0              /* UART carrying the framed link: 0 = USB bridge (easy to deploy, Pi connects here) */
 #endif
-#ifndef SKYNOID_CONSOLE_UART
-#define SKYNOID_CONSOLE_UART 0       /* 0 = console shares the link UART, 2 = separate UART2 */
+#ifndef UART_LINK_BAUD
+#define UART_LINK_BAUD 460800
 #endif
-#ifndef SKYNOID_CONSOLE_BAUD
-#define SKYNOID_CONSOLE_BAUD 115200  /* only used when SKYNOID_CONSOLE_UART=2 */
+#ifndef UART_CONSOLE_NUM
+#define UART_CONSOLE_NUM UART_LINK_NUM   /* same number = shared; 2 = console on its own UART2 pins */
 #endif
+#ifndef UART_CONSOLE_BAUD
+#define UART_CONSOLE_BAUD 115200     /* used only when the console has its own UART; shared mode runs at UART_LINK_BAUD */
+#define UART_CONSOLE_BAUD_IS_DEFAULT 1   /* marker: lets chan_cfg.h tell "left out" from "set on purpose" */
+#endif
+#ifndef UART0_FREE_BAUD
+#define UART0_FREE_BAUD 115200       /* baud of UART0 when NEITHER channel uses it: chan_init sets it on purpose */
+#endif
+/* UART_LINK_TX_PIN, UART_LINK_RX_PIN, UART_CONSOLE_TX_PIN, UART_CONSOLE_RX_PIN: defaults in core/chan_cfg.h */
+#include "core/chan_cfg.h"
 #ifndef SKYNOID_CONSOLE_ACTUATE
 #define SKYNOID_CONSOLE_ACTUATE 1    /* 0 compiles tier 1 (actuation) console commands out */
 #endif
@@ -54,6 +66,19 @@
 #ifndef SKYNOID_INA219_ADDR
 #define SKYNOID_INA219_ADDR 0x41                 /* single topology (A0 pad closed); 0x40 in dual */
 #endif
+#ifndef SKYNOID_BATT_STALE_MS
+#define SKYNOID_BATT_STALE_MS 3000               /* no battery reading for this long = sensor fault (no motion, one
+                                                  * SENSOR_FAULT event). The 1 s average needs about 1 s after boot.
+                                                  * 0 turns the check off: use -DSKYNOID_BATT_STALE_MS=0 on a bench
+                                                  * without the INA219. */
+#endif
+/* Bench test of the low-battery beeps without draining the pack (leave both undefined for real use). Examples for
+ * a platformio.ini env, with a pack at about 11.4 V:
+ *   -DSKYNOID_TEST_BATT_LOW_MV=12000    LOW after 5 s: low-battery beep, repeats every 30 s; stops when above 12150 mV
+ *   -DSKYNOID_TEST_BATT_CRIT_MV=11500 together with the LOW line: CRIT after 5 s, state FAULT, motion refused,
+ *                                       critical alarm (1 s on, 1 s off) until power cycle
+ * Both go through skp_set, so the same limits as the runtime parameters apply (low 9000..12600, crit 8500..12000,
+ * crit must stay below low); a rejected value is logged as a warning at boot and the default stays. */
 
 /* ---- identity ---------------------------------------------------------------- */
 #define FW_MAJOR 1
@@ -74,7 +99,7 @@
 #endif
 
 /* ---- timing and sizes (config-defaults.yaml) ---------------------------------- */
-#define UART_BAUD            460800
+/* UART_BAUD (fixed 460800) is gone: the link baud is UART_LINK_BAUD, set in the channel block at the top. */
 #define LINK_TIMEOUT_MS      500
 #define SESSION_HOLD_MS      3000
 #define SAFETY_LOOP_MS       5

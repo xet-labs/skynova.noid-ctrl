@@ -60,6 +60,7 @@ static uint8_t compute_hazard(const skb_t *b)
         }
     }
     if (b->floor == SKL_FLOOR_UNRELIABLE) { mask |= SKL_HZ_UNRELIABLE; }
+    if (b->batt_missing) { mask |= SKL_HZ_SENSOR_FAULT; }            /* dead battery sensor: no motion */
     if (b->cfg.cliff_required && !all_baselines(b)) { mask |= SKL_HZ_UNRELIABLE; }   /* fail towards stopped */
     return mask;
 }
@@ -87,6 +88,7 @@ void skb_cfg_default(skb_cfg_t *cfg)
     cfg->cal_window_ms = 200;
     cfg->stall_soft_ms = 300;
     cfg->stall_hard_ms = 50;
+    cfg->batt_stale_ms = 0;               /* off: old callers and tests keep their meaning */
 }
 
 void skb_init(skb_t *b, const skp_store_t *params, const skb_cfg_t *cfg)
@@ -273,6 +275,19 @@ void skb_safety_step(skb_t *b, const int32_t ir[SKB_N_IR], int32_t batt_mv, int3
 
     for (int i = 0; i < SKB_N_IR; i++) { b->ir[i] = ir[i]; }
     b->have_ir = true;
+
+    /* Battery sensor watchdog (runs before the hazard is computed so the bit is in this step's mask).
+     * batt_mv <= 0 means "no reading". After cfg.batt_stale_ms without one: latch, raise the hazard bit,
+     * report once. A reading clears the latch; the hazard diff below then sends HAZARD_CLEARED. */
+    if (!b->have_batt_ref) { b->have_batt_ref = true; b->batt_ref_ms = now_ms; }
+    if (batt_mv > 0) {
+        b->batt_ref_ms = now_ms;
+        b->batt_missing = false;
+    } else if (b->cfg.batt_stale_ms != 0 && !b->batt_missing &&
+               (uint32_t)(now_ms - b->batt_ref_ms) >= b->cfg.batt_stale_ms) {
+        b->batt_missing = true;
+        push_event(b, SKB_EV_SENSOR_FAULT, SKB_SENSOR_BATT, SKB_SENSOR_REASON_NO_READING);
+    }
 
     if (b->cal_active) {
         for (int i = 0; i < SKB_N_IR; i++) { b->cal_sum[i] += ir[i]; }

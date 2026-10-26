@@ -7,8 +7,10 @@
  *           test_console, test_logtext). See docs/steps/step-1.3b-console-engine.md.
  * Spec    : sprint-steps.md step 1.3, protocol-v0.md section 9 ("silent until spoken to").
  *
- * Every received byte goes through the wire parser first. Text bytes (outside a frame)
- * go to the line editor; valid binary frames go to link_on_frame() (step 1.4).
+ * Shared mode (default, link and console on one UART): every received byte goes through the wire parser first.
+ * Text bytes (outside a frame) go to the line editor; valid binary frames go to link_on_frame() (step 1.4).
+ * Separate mode (-DUART_CONSOLE_NUM=<other UART>, step 1.7): this task reads only the console UART, every byte
+ * is text; the link UART is read by the link task (link.c, link_start_rx).
  * This task only READS the UART. Everything it prints goes through the logger task
  * (logger_write_raw), the single writer, so lines never interleave mid-word.
  */
@@ -21,13 +23,13 @@
 
 #include "app_config.h"
 #include "console/console_uart.h"
+#include "core/chan.h"
 #include "core/logger.h"
 #include "link/link.h"
 #include "skynoid_console.h"
 #include "skynoid_text.h"
 #include "skynoid_wire.h"
 
-#define CON_UART     UART_NUM_0
 #define PROMPT       "skynoid> "
 #define TASK_STACK   4096
 #define TASK_PRIO    3
@@ -46,24 +48,36 @@ static void put(const char *s)
 static void console_task(void *arg)
 {
     (void)arg;
-    skw_parser_t parser;
-    skw_frame_t frame;
     skt_line_t line;
     console_out_t out = { .write = out_write, .ctx = NULL };
     uint8_t rx[64];
-
+#if CHAN_SHARED
+    skw_parser_t parser;
+    skw_frame_t frame;
     skw_parser_init(&parser);
+#endif
     skt_line_init(&line);
     put("skynoid console ready, type help\r\n");
 
     for (;;) {
-        const int n = uart_read_bytes(CON_UART, rx, sizeof rx, pdMS_TO_TICKS(20));
+#if CHAN_SHARED
+        /* one port: frames and text arrive mixed; the wire parser splits them (step 1.4) */
+        const int n = chan_read(SKC_CH_LINK, rx, sizeof rx, 20);
+#else
+        /* own console port: text only, no frame parsing; the link task reads the link UART */
+        const int n = chan_read(SKC_CH_CONSOLE, rx, sizeof rx, 20);
+#endif
         for (int i = 0; i < n; i++) {
+#if CHAN_SHARED
             const skw_event_t ev = skw_parser_feed(&parser, rx[i], &frame);
             if (ev == SKW_EV_FRAME) { link_on_frame(&frame); continue; }                /* step 1.4 */
             if (ev != SKW_EV_TEXT) { continue; }                                        /* bad frame: counted by the parser */
-            const char c = (char)parser.text_byte;
-            switch (skt_line_feed(&line, parser.text_byte)) {
+            const uint8_t byte = (uint8_t)parser.text_byte;
+#else
+            const uint8_t byte = rx[i];
+#endif
+            const char c = (char)byte;
+            switch (skt_line_feed(&line, byte)) {
             case SKT_EV_ECHO:     logger_write_raw(&c, 1); break;
             case SKT_EV_ERASE:    put("\b \b"); break;
             case SKT_EV_LINE:
@@ -77,7 +91,9 @@ static void console_task(void *arg)
             default: break;
             }
         }
+#if CHAN_SHARED
         link_tick();                         /* 500 ms without PING ends the session (runs every <= 20 ms) */
+#endif
     }
 }
 
@@ -85,20 +101,12 @@ void console_start(void)
 {
     console_register_system();
     console_register_log();
+    console_register_i2c();
+    console_register_base();
+    console_register_devices();
     link_init();
-
-    const uart_config_t cfg = {
-        .baud_rate = UART_BAUD,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
-    ESP_ERROR_CHECK(uart_driver_install(CON_UART, UART_RX_BUF, UART_TX_BUF, 0, NULL, 0));
-    ESP_ERROR_CHECK(uart_param_config(CON_UART, &cfg));
-    ESP_ERROR_CHECK(uart_set_pin(CON_UART, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
-                                 UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    chan_init();                            /* UART drivers from UART_LINK_* / UART_CONSOLE_* (core/chan.c) */
     logger_start();                         /* from here on, every UART write goes through the logger */
+    link_start_rx();                        /* own link task only when the console has its own port */
     xTaskCreate(console_task, "console", TASK_STACK, NULL, TASK_PRIO, NULL);
 }

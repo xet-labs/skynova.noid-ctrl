@@ -99,6 +99,33 @@ bool hal_i2c_probe(uint8_t addr)
     return ack;
 }
 
+/* Generic register read for identity checks (devices / selftest). The INA219 already owns a device handle at
+ * SKYNOID_INA219_ADDR, so that address reuses it; any other address gets a temporary handle that is removed again.
+ * Reads len bytes after writing one register byte. No ACK, a busy bus or a timeout all return false. */
+bool hal_i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
+{
+    if (s_bus == NULL || buf == NULL || len == 0) { return false; }
+    if (xSemaphoreTake(s_i2c_lock, pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != pdTRUE) { return false; }
+    i2c_master_dev_handle_t dev = NULL;
+    bool temp = false;
+    if (addr == SKYNOID_INA219_ADDR && s_ina != NULL) {
+        dev = s_ina;
+    } else {
+        const i2c_device_config_t cfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = addr,
+            .scl_speed_hz = I2C_SPEED_HZ,
+        };
+        if (i2c_master_bus_add_device(s_bus, &cfg, &dev) != ESP_OK) { dev = NULL; }
+        temp = (dev != NULL);
+    }
+    bool ok = false;
+    if (dev != NULL) { ok = (i2c_master_transmit_receive(dev, &reg, 1, buf, len, I2C_TIMEOUT_MS) == ESP_OK); }
+    if (temp) { (void)i2c_master_bus_rm_device(dev); }
+    xSemaphoreGive(s_i2c_lock);
+    return ok;
+}
+
 bool hal_ina219_read_mv(int32_t *mv)
 {
     if (s_ina == NULL || xSemaphoreTake(s_i2c_lock, pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != pdTRUE) { return false; }

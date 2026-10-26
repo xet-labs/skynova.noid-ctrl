@@ -1,5 +1,5 @@
 /*
- * link.c - UART0 frame link: PING/PONG, HELLO at the start of a session, session timeout.
+ * link.c - UART frame link (the UART chosen by UART_LINK_NUM): PING/PONG, HELLO at the start of a session, session timeout.
  *
  * Purpose : give the Pi a heartbeat it can measure (ping_test) and a way to know the board is alive
  *           (HELLO). The session rules are pure and tested (lib/skynoid_link); this file only owns the
@@ -28,9 +28,11 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/task.h"
 
 #include "app_config.h"
 #include "base.h"
+#include "core/chan.h"
 #include "core/logger.h"
 #include "link/link.h"
 #include "skynoid_dispatch.h"
@@ -239,4 +241,32 @@ void link_tick(void)
     }
     send_events();
     if (skd_stream_due(&s_stream, now_ms())) { send_status(); }
+}
+
+/* Separate mode (the console has its own UART): the link has its own reader task. It reads only the link
+ * UART, hands valid frames to link_on_frame and ignores text bytes; link_tick moves here from the console task.
+ * Shared mode: the console task does all of this, so nothing starts. */
+#if !CHAN_SHARED
+static void link_rx_task(void *arg)
+{
+    (void)arg;
+    skw_parser_t parser;
+    skw_frame_t frame;
+    uint8_t rx[64];
+    skw_parser_init(&parser);
+    for (;;) {
+        const int n = chan_read(SKC_CH_LINK, rx, sizeof rx, 20);
+        for (int i = 0; i < n; i++) {
+            if (skw_parser_feed(&parser, rx[i], &frame) == SKW_EV_FRAME) { link_on_frame(&frame); }
+        }
+        link_tick();                           /* 500 ms without PING ends the session */
+    }
+}
+#endif
+
+void link_start_rx(void)
+{
+#if !CHAN_SHARED
+    xTaskCreate(link_rx_task, "link", 4096, NULL, 3, NULL);
+#endif
 }

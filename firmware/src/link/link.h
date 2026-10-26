@@ -15,7 +15,8 @@
 
 void link_init(void);                           /* once, before the console task starts */
 void link_on_frame(const skw_frame_t *f);       /* console task only */
-void link_tick(void);                           /* console task only: ends the session after 500 ms of silence */
+void link_tick(void);                           /* console task only (shared mode) or the link task (separate): ends the session after 500 ms of silence */
+void link_start_rx(void);                       /* once, after chan_init and logger_start: starts the link reader task ONLY when the console has its own UART */
 bool link_session_active(void);
 
 /* Send one frame (node to host). payload may be NULL when len is 0. ack is the host seq being answered,

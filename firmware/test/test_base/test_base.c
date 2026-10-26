@@ -506,6 +506,89 @@ static void test_soft_stall_brakes_once_and_a_hard_stall_cuts_the_driver(void)
     TEST_ASSERT_EQUAL_INT(SKB_SAFE, skb_state(&r.b));
 }
 
+/* ---- battery sensor watchdog (batt_stale_ms) -------------------------------------------- */
+static void rig_stale(rig_t *r, uint32_t stale_ms)
+{
+    rig_init(r, false);                   /* cliff not required, so the hazard mask starts at 0 */
+    r->b.cfg.batt_stale_ms = stale_ms;
+}
+
+static void test_no_battery_reading_after_the_grace_time_blocks_drive_and_reports_once(void)
+{
+    rig_t r; rig_stale(&r, 1000);
+    r.batt_mv = 0;
+    run(&r, 500);
+    TEST_ASSERT_EQUAL_INT(0, count_ev(&r, SKB_EV_SENSOR_FAULT));     /* grace time not over */
+    TEST_ASSERT_EQUAL_HEX8(0, skb_hazard(&r.b));
+    run(&r, 600);
+    TEST_ASSERT_EQUAL_INT(1, count_ev(&r, SKB_EV_SENSOR_FAULT));
+    TEST_ASSERT_EQUAL_UINT16(SKB_SENSOR_BATT, find_ev(&r, SKB_EV_SENSOR_FAULT)->a);
+    TEST_ASSERT_EQUAL_UINT8(SKB_SENSOR_REASON_NO_READING, find_ev(&r, SKB_EV_SENSOR_FAULT)->b);
+    TEST_ASSERT_EQUAL_HEX8(SKL_HZ_SENSOR_FAULT, skb_hazard(&r.b));
+    TEST_ASSERT_EQUAL_INT(0, skb_cmd_arm(&r.b));
+    TEST_ASSERT_EQUAL_INT(SKB_NACK_HAZARD_BLOCKED, skb_cmd_drive(&r.b, 100, 0, 500, r.t));
+    TEST_ASSERT_EQUAL_UINT16(SKL_HZ_SENSOR_FAULT, skb_last_detail(&r.b));
+    run(&r, 2000);
+    TEST_ASSERT_EQUAL_INT(1, count_ev(&r, SKB_EV_SENSOR_FAULT));     /* reported once, not every step */
+}
+
+static void test_a_returning_battery_reading_clears_the_fault_and_reports_it(void)
+{
+    rig_t r; rig_stale(&r, 1000);
+    r.batt_mv = 0;
+    run(&r, 1200);
+    TEST_ASSERT_EQUAL_HEX8(SKL_HZ_SENSOR_FAULT, skb_hazard(&r.b));
+    r.n_ev = 0;
+    r.batt_mv = 12000;
+    run(&r, 20);
+    TEST_ASSERT_EQUAL_HEX8(0, skb_hazard(&r.b));
+    TEST_ASSERT_EQUAL_INT(1, count_ev(&r, SKB_EV_HAZARD_CLEARED));
+    TEST_ASSERT_EQUAL_INT(0, skb_cmd_arm(&r.b));
+    TEST_ASSERT_EQUAL_INT(0, skb_cmd_drive(&r.b, 100, 0, 500, r.t));
+}
+
+static void test_the_default_config_keeps_the_old_behaviour_without_a_battery(void)
+{
+    rig_t r; rig_init(&r, false);                                    /* batt_stale_ms = 0 = check off */
+    r.batt_mv = 0;
+    run(&r, 6000);
+    TEST_ASSERT_EQUAL_INT(0, count_ev(&r, SKB_EV_SENSOR_FAULT));
+    TEST_ASSERT_EQUAL_HEX8(0, skb_hazard(&r.b));
+}
+
+static void test_a_battery_reading_that_is_present_from_the_start_never_faults(void)
+{
+    rig_t r; rig_stale(&r, 1000);
+    run(&r, 5000);
+    TEST_ASSERT_EQUAL_INT(0, count_ev(&r, SKB_EV_SENSOR_FAULT));
+    TEST_ASSERT_EQUAL_HEX8(0, skb_hazard(&r.b));
+}
+
+static void test_a_sensor_that_dies_mid_run_faults_after_the_grace_time_from_the_last_reading(void)
+{
+    rig_t r; rig_stale(&r, 1000);
+    run(&r, 3000);
+    r.batt_mv = 0;
+    run(&r, 900);
+    TEST_ASSERT_EQUAL_INT(0, count_ev(&r, SKB_EV_SENSOR_FAULT));     /* counted from the last good reading */
+    run(&r, 200);
+    TEST_ASSERT_EQUAL_INT(1, count_ev(&r, SKB_EV_SENSOR_FAULT));
+    TEST_ASSERT_EQUAL_HEX8(SKL_HZ_SENSOR_FAULT, skb_hazard(&r.b));
+}
+
+static void test_a_dead_battery_sensor_stops_a_running_drive_by_reflex(void)
+{
+    rig_t r; rig_stale(&r, 1000);
+    TEST_ASSERT_EQUAL_INT(0, skb_cmd_arm(&r.b));
+    TEST_ASSERT_EQUAL_INT(0, skb_cmd_drive(&r.b, 100, 0, 2000, r.t));
+    run(&r, 200);
+    r.batt_mv = 0;
+    run(&r, 1100);
+    TEST_ASSERT_EQUAL_HEX8(SKL_HZ_SENSOR_FAULT, skb_hazard(&r.b));
+    TEST_ASSERT_TRUE(r.reflexes >= 1);
+    TEST_ASSERT_EQUAL_INT32(0, r.b.cur[0]);
+}
+
 /* ---- events -------------------------------------------------------------------------- */
 static void test_event_queue_drops_new_events_when_full_and_counts_them(void)
 {
@@ -552,6 +635,12 @@ int main(void)
     RUN_TEST(test_a_missing_battery_reading_is_ignored);
     RUN_TEST(test_stall_guard_is_off_while_the_limits_are_unset);
     RUN_TEST(test_soft_stall_brakes_once_and_a_hard_stall_cuts_the_driver);
+    RUN_TEST(test_no_battery_reading_after_the_grace_time_blocks_drive_and_reports_once);
+    RUN_TEST(test_a_returning_battery_reading_clears_the_fault_and_reports_it);
+    RUN_TEST(test_the_default_config_keeps_the_old_behaviour_without_a_battery);
+    RUN_TEST(test_a_battery_reading_that_is_present_from_the_start_never_faults);
+    RUN_TEST(test_a_sensor_that_dies_mid_run_faults_after_the_grace_time_from_the_last_reading);
+    RUN_TEST(test_a_dead_battery_sensor_stops_a_running_drive_by_reflex);
     RUN_TEST(test_event_queue_drops_new_events_when_full_and_counts_them);
     return UNITY_END();
 }

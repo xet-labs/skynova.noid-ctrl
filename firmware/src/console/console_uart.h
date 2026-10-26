@@ -9,7 +9,10 @@
 #define CONSOLE_UART_H
 
 void console_start(void);
-void console_register_system(void);   /* version, uptime, status, pins (cmd_system.c) */
+void console_register_system(void);   /* version, uptime, pins (cmd_system.c) */
 void console_register_log(void);      /* log level, log dump, log stats (cmd_log.c) */
+void console_register_i2c(void);      /* i2c scan, i2c probe (cmd_i2c.c) */
+void console_register_base(void);     /* status, batt, ir (cmd_base.c) */
+void console_register_devices(void);  /* devices, selftest (cmd_devices.c) */
 
 #endif /* CONSOLE_UART_H */
