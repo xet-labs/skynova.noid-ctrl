@@ -19,6 +19,12 @@ void link_tick(void);                           /* console task only (shared mod
 void link_start_rx(void);                       /* once, after chan_init and logger_start: starts the link reader task ONLY when the console has its own UART */
 bool link_session_active(void);
 
+/* Queue a live event (touch, sensor fault of a pad) for the host. Unlike base events it is NOT kept for a later session:
+ * with no session running it is dropped and false is returned, so a pad touched for minutes cannot push safety events
+ * (cliff, link_lost) out of the 16-deep queue. id is an SKB_EV_* value, a and b as in skb_event_t. Never blocks; safe
+ * from any task. Returns true when the event was queued. */
+bool link_post_live_event(uint8_t id, uint16_t a, uint8_t b);
+
 /* Send one frame (node to host). payload may be NULL when len is 0. ack is the host seq being answered,
  * else 0. The node's own seq counter is added here. Returns false when the frame was refused (too long
  * for one logger record) or dropped (queue full). Safe from any task. */

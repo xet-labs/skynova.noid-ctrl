@@ -25,6 +25,7 @@
 #include "console/console_uart.h"
 #include "core/chan.h"
 #include "core/logger.h"
+#include "core/maint.h"
 #include "link/link.h"
 #include "skynoid_console.h"
 #include "skynoid_text.h"
@@ -80,6 +81,10 @@ static void console_task(void *arg)
             switch (skt_line_feed(&line, byte)) {
             case SKT_EV_ECHO:     logger_write_raw(&c, 1); break;
             case SKT_EV_ERASE:    put("\b \b"); break;
+            case SKT_EV_REPLACE:
+                for (size_t k = 0; k < line.erased; k++) { put("\b \b"); }
+                if (line.n > 0) { put(line.buf); }
+                break;
             case SKT_EV_LINE:
                 put("\r\n");
                 console_execute(line.buf, &out);
@@ -99,11 +104,16 @@ static void console_task(void *arg)
 
 void console_start(void)
 {
+    maint_init();                           /* before any command can ask the gate (step 1.6b) */
+    console_set_maint_check(maint_is_active);
     console_register_system();
     console_register_log();
     console_register_i2c();
     console_register_base();
     console_register_devices();
+    console_register_servo();
+    console_register_maint();
+    console_register_buzz();
     link_init();
     chan_init();                            /* UART drivers from UART_LINK_* / UART_CONSOLE_* (core/chan.c) */
     logger_start();                         /* from here on, every UART write goes through the logger */

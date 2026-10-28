@@ -137,7 +137,7 @@ const skr_report_t *device_probe_run(void)
             if (SKYNOID_IS_MV_PER_AMP == SKL_UNSET) { s_probe.in[i].flags |= SKR_F_NOT_FITTED; }   /* unset = not used */
             else { set_note(i, "motor %d mA", (int)st.motor_ma); }
         }
-        else if (strcmp(n, "servo_current") == 0) { s_probe.in[i].flags |= SKR_F_NOT_FITTED; }      /* GPIO32 has no reader yet */
+        else if (strcmp(n, "servo_current_acs712") == 0) { s_probe.in[i].flags |= SKR_F_NOT_FITTED; } /* GPIO32 has no reader yet */
         else if (strncmp(n, "touch_", 6) == 0)    { s_probe.in[i].flags |= SKR_F_DISABLED; }        /* no touch driver yet */
         else if (strcmp(n, "link_uart0") == 0) {
             if (UART_LINK_NUM != 0) { s_probe.in[i].flags |= SKR_F_DISABLED; }

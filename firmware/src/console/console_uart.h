@@ -14,5 +14,8 @@ void console_register_log(void);      /* log level, log dump, log stats (cmd_log
 void console_register_i2c(void);      /* i2c scan, i2c probe (cmd_i2c.c) */
 void console_register_base(void);     /* status, batt, ir (cmd_base.c) */
 void console_register_devices(void);  /* devices, selftest (cmd_devices.c) */
+void console_register_servo(void);    /* servo (cmd_servo.c; locked unless built with SKYNOID_SERVO_TRIAL=1) */
+void console_register_maint(void);    /* maint (cmd_maint.c; unlocks the tier 1 commands) */
+void console_register_buzz(void);     /* buzz <pattern> (cmd_buzz.c; tier 1) */
 
 #endif /* CONSOLE_UART_H */

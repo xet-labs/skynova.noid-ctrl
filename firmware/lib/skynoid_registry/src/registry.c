@@ -34,7 +34,7 @@ const skr_dev_t SKR_MANIFEST[] = {
     {"ir_rear_left",    SKR_ADC,     "adc",   "GPIO34", {2, 2, 0}, NO3, NOALT, 0},
     {"ir_rear_right",   SKR_ADC,     "adc",   "GPIO35", {2, 2, 0}, NO3, NOALT, 0},
     {"motor_current_is", SKR_ADC,    "adc",   "GPIO33", {1, 1, 0}, NO3, NOALT, 0},
-    {"servo_current",   SKR_ADC,     "adc",   "GPIO32", {1, 0, 1}, NO3, NOALT, 0},
+    {"servo_current_acs712", SKR_ADC, "adc",   "GPIO32", {1, 0, 1}, NO3, NOALT, 0},
     {"bts7960_left",    SKR_OUTPUT,  "pwm",   "GPIO25/26 EN14", {2, 2, 0}, NO3, NOALT, 0},
     {"bts7960_right",   SKR_OUTPUT,  "pwm",   "GPIO27/16 EN14", {2, 2, 0}, NO3, NOALT, 0},
     {"buzzer",          SKR_OUTPUT,  "out",   "GPIO23", {2, 2, 0}, NO3, NOALT, 0},

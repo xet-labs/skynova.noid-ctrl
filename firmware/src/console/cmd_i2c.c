@@ -66,16 +66,51 @@ static int i2c_probe(int argc, char **argv, console_out_t *out)
     return CON_OK;
 }
 
+static int i2c_read(int argc, char **argv, console_out_t *out)
+{
+    int32_t addr, reg, n = 1;
+    if (argc < 4 || argc > 5 ||
+        !skt_parse_i32(argv[2], &addr) || addr < I2C_ADDR_FIRST || addr > I2C_ADDR_LAST ||
+        !skt_parse_i32(argv[3], &reg) || reg < 0 || reg > 255) {
+        console_set_detail(out, "usage: i2c read <addr> <reg> [1..16]");
+        return CON_INVALID_ARG;
+    }
+    if (argc == 5) {
+        if (!skt_parse_i32(argv[4], &n) || n < 1 || n > 16) {
+            console_set_detail(out, "n must be 1..16");
+            return CON_INVALID_ARG;
+        }
+    }
+    uint8_t buf[16];
+    if (!hal_i2c_read_reg((uint8_t)addr, (uint8_t)reg, buf, (size_t)n)) {
+        console_set_detail(out, "read failed or no ACK");
+        return CON_BUSY;
+    }
+    if (n == 1) {
+        console_printf(out, "0x%02X\n", (unsigned)buf[0]);
+    } else if (n == 2) {
+        const unsigned w = (unsigned)((buf[0] << 8) | buf[1]);
+        console_printf(out, "0x%02X 0x%02X (0x%04X)\n", (unsigned)buf[0], (unsigned)buf[1], w);
+    } else {
+        for (int i = 0; i < n; i++) {
+            console_printf(out, "%s0x%02X", i > 0 ? " " : "", (unsigned)buf[i]);
+        }
+        console_printf(out, "\n");
+    }
+    return CON_OK;
+}
+
 static int cmd_i2c(int argc, char **argv, console_out_t *out)
 {
     if (argc == 2 && strcmp(argv[1], "scan") == 0) { return i2c_scan(out); }
     if (argc >= 2 && strcmp(argv[1], "probe") == 0) { return i2c_probe(argc, argv, out); }
-    console_set_detail(out, "usage: i2c scan | i2c probe <addr>");
+    if (argc >= 2 && strcmp(argv[1], "read") == 0) { return i2c_read(argc, argv, out); }
+    console_set_detail(out, "usage: i2c scan | i2c probe <addr> | i2c read <addr> <reg> [n]");
     return CON_INVALID_ARG;
 }
 
 static const console_cmd_t I2C_CMDS[] = {
-    {"i2c", "i2c scan | i2c probe <addr>  list or test addresses on I2C bus 0", cmd_i2c, 0},
+    {"i2c", "i2c scan | probe <addr> | read <addr> <reg> [n]  I2C bus operations", cmd_i2c, 0},
 };
 
 void console_register_i2c(void)

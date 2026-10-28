@@ -34,10 +34,40 @@ skt_event_t skt_line_feed(skt_line_t *l, uint8_t c)
         l->esc = (c == '[') ? ESC_CSI : (c == 'O') ? ESC_SS3 : ESC_NONE;
         return SKT_EV_NONE;
     case ESC_CSI:
-        if (c >= 0x40 && c <= 0x7E) { l->esc = ESC_NONE; }   /* final byte ends it */
+        if (c >= 0x40 && c <= 0x7E) {
+            l->esc = ESC_NONE;
+            if (c == 'A' && l->prev_len > 0) {
+                l->erased = l->n;
+                memcpy(l->buf, l->prev, l->prev_len + 1);
+                l->n = l->prev_len;
+                l->overflow = false;
+                return SKT_EV_REPLACE;
+            }
+            if (c == 'B' && l->n > 0) {
+                l->erased = l->n;
+                l->buf[0] = '\0';
+                l->n = 0;
+                l->overflow = false;
+                return SKT_EV_REPLACE;
+            }
+        }
         return SKT_EV_NONE;
     case ESC_SS3:
         l->esc = ESC_NONE;
+        if (c == 'A' && l->prev_len > 0) {
+            l->erased = l->n;
+            memcpy(l->buf, l->prev, l->prev_len + 1);
+            l->n = l->prev_len;
+            l->overflow = false;
+            return SKT_EV_REPLACE;
+        }
+        if (c == 'B' && l->n > 0) {
+            l->erased = l->n;
+            l->buf[0] = '\0';
+            l->n = 0;
+            l->overflow = false;
+            return SKT_EV_REPLACE;
+        }
         return SKT_EV_NONE;
     default:
         break;
@@ -54,6 +84,10 @@ skt_event_t skt_line_feed(skt_line_t *l, uint8_t c)
         l->last_cr = (c == '\r');
         l->buf[l->n] = '\0';
         l->done = true;
+        if (!l->overflow && l->n > 0) {
+            memcpy(l->prev, l->buf, l->n + 1);
+            l->prev_len = l->n;
+        }
         return l->overflow ? SKT_EV_TOO_LONG : SKT_EV_LINE;
     }
     if (c == 0x08 || c == 0x7F) {       /* backspace or delete */

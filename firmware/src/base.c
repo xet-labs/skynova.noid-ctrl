@@ -27,6 +27,7 @@
 #include "board/board_pins.h"
 #include "hal.h"
 #include "skynoid_params.h"
+#include "touch.h"
 
 static const char *TAG = "base";
 
@@ -109,6 +110,7 @@ static void deliver_events(void)
         } else if (ev.id == SKB_EV_BATT_CRIT) {
             s_low_batt_active = false;
             s_crit_batt_active = true;
+            hal_servo_request_off();                              /* servos are loads too: off, same as the motors */
             hal_buzzer_play(BUZ_CRITICAL);                    /* 1 s on / 1 s off, never ends by itself */
         } else if (ev.id == SKB_EV_NODE_FAULT && ev.a != SKB_FAULT_BATT_CRIT) {
             if (!s_crit_batt_active) { hal_buzzer_play(BUZ_ERROR); }   /* an error beep would cut the critical alarm */
@@ -233,6 +235,9 @@ void base_start(void)
     hal_adc_init();
     hal_i2c_init();
     hal_indicator_init();
+    hal_range_start();                                            /* VL53L0X task: status 2 until the sensor answers */
+    hal_servo_start();                                            /* PCA9685 task; does nothing in a locked build */
+    touch_start();                                                /* touch pads: EVT touch to the host during a session */
 
     xTaskCreate(power_task, "power", 3072, NULL, PRIO_POWER, NULL);
     xTaskCreate(motion_task, "motion", 3072, NULL, PRIO_MOTION, NULL);
@@ -247,7 +252,7 @@ void base_start(void)
 
 int base_cmd_arm(void)        { LOCKED(skb_cmd_arm(&s_base)); }
 int base_cmd_disarm(void)     { LOCKED(skb_cmd_disarm(&s_base)); }
-int base_cmd_estop(void)      { LOCKED(skb_cmd_estop(&s_base)); }
+int base_cmd_estop(void)      { hal_servo_request_off(); LOCKED(skb_cmd_estop(&s_base)); }   /* servos off first: no lock, instant */
 int base_cmd_clear_estop(void){ LOCKED(skb_cmd_clear_estop(&s_base)); }
 int base_cmd_stop(void)       { LOCKED(skb_cmd_stop(&s_base)); }
 int base_cmd_cal_floor(void)  { LOCKED(skb_cmd_cal_floor(&s_base, now_ms())); }
@@ -270,6 +275,7 @@ const char *base_last_reason(void)
 
 void base_link_lost(void)
 {
+    hal_servo_request_off();                                      /* host gone: a servo must not keep a raw pulse */
     lock();
     skb_link_lost(&s_base);
     if (skb_take_reflex(&s_base)) { hal_motor_brake_now(); }
@@ -281,8 +287,7 @@ void base_get_status(base_status_t *out)
     lock();
     out->hazard = skb_hazard(&s_base);
     out->state = (uint8_t)skb_state(&s_base);
-    out->range_mm = 0;
-    out->range_status = 2;
+    hal_range_get(&out->range_mm, &out->range_status);      /* own latch, no base state involved */
     out->batt_mv = (uint16_t)skl_clamp(s_batt_avg_mv, 0, 65535);
     for (int i = 0; i < 4; i++) { out->ir_raw[i] = (uint16_t)skl_clamp(s_base.ir[i], 0, 65535); }
     out->motor_ma = (uint16_t)skl_clamp(s_base.motor_ma, 0, 65535);

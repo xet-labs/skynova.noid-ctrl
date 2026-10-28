@@ -12,6 +12,8 @@ Written 2026-10-25 by claude-code_c9a1. The firmware refuses to guess: every val
 | `SKYNOID_MIN_CONTRAST_PCT` | smallest gap between floor and no-floor that counts as usable, in percent | Compare the floor reading with the no-floor reading on your floor and on a dark mat | same as above | |
 | `SKYNOID_IR_POLARITY` | does the reading fall or rise at an edge | Move a sensor over an edge while watching `ir_view` | default `SKL_POL_FLOOR_HIGH` (reading FALLS at an edge) is an assumption | |
 | `SKYNOID_IS_MV_PER_AMP` | BTS7960 IS output, millivolts per amp at the ADC pin | Run one motor against a current meter, note the IS pin voltage | `motor_ma` reads 0, the stall guard cannot work | |
+| `SKYNOID_ACS712_ZERO_MV` | ACS712 (servo rail) output at the ADC pin with the servo rail ON and every servo idle, in mV | Run `acs`, servo rail on, servos idle; take the printed mV (several runs) | `acs` prints raw counts and mV only, no mA | |
+| `SKYNOID_ACS712_MV_PER_AMP` | ACS712 mV per amp at the ADC pin = sensor sensitivity x divider ratio (30 A part: 66 mV/A before the divider; the divider values are not in the specs) | Compute, then check with a meter in line on the servo rail while a servo moves | same | |
 | `SKYNOID_LEFT_INVERT`, `SKYNOID_RIGHT_INVERT` | 1 if forward turns that wheel backwards | One short bench drive with the wheels in the air | default 0 | |
 | `BUZZER_ACTIVE_LEVEL` (`src/hal_indicator.c`) | pin level that sounds the buzzer | Try 1, then 0 | assumed 1 (active high) | |
 | ADC full scale | the 12 dB attenuation gives about 3100 mV on an ESP32 | Compare a known voltage with the raw reading | assumed 3100 mV | |
@@ -32,7 +34,7 @@ The other parameters (speed cap, turn cap, acceleration, cliff ratios, battery l
 ## 3. Facts about the board to confirm once (mark each `#verify` in the code when done)
 - Which board it really is (`board_pins.h` has the pin map; `pins` in the console prints it).
 - I2C pull-up resistors present on the bus (the firmware also enables the internal ones).
-- INA219 address 0x41 (A0 pad closed). NOT confirmed on 2026-10-26: `i2c scan` shows no ACK at 0x41, see section 5.
+- INA219 address: **0x41** (restored in `app_config.h` on 2026-10-28). The 2026-10-27 change to 0x40 came from the first scan (16:03), which showed nothing at 0x41. The next scan listed 0x29, 0x40, 0x41 and 0x70, and the user's `batt` read 11404 mV from 0x41, so the INA219 is at 0x41 and the device at 0x40 (with its all-call at 0x70) is the PCA9685. See section 6.
 - BTS7960: both inputs low with EN high really brakes.
 - Which OLED chip and address; VL53L0X needs a vendored, licensed driver (not written).
 
@@ -72,3 +74,24 @@ Readings (interpretation, not measured): 0x29 is the VL53L0X. 0x40 together with
 3. Set `duty_per_mm_s_x1000` (id 11) and `wheel_base_mm` (id 10) with `set_param`, arm, then a short drive
    with a small TTL; confirm the wheels stop when the TTL ends and when you unplug the USB cable.
 4. Only after the floor values in table 1 are set and built into the normal `single` env: `cal_floor` on the floor.
+
+## 6. INA219 vs PCA9685 at 0x40 — identification procedure
+
+> Added 2026-10-27, corrected 2026-10-28. Newer evidence (a scan with 0x41 present, and `batt` reading 11404 mV from
+> 0x41) shows the INA219 is at 0x41 and 0x40 is the PCA9685, so `app_config.h` is back to 0x41. The procedure below
+> still works as a double check; swap the addresses in the table (INA219 at 0x41, PCA9685 at 0x40). The console
+> command `devices -v` does the same identity check by itself.
+
+The `i2c read` command is now available in the firmware console. Run:
+```
+python -m skynoid.tools.shell --port /dev/ttyUSB1
+skynoid> i2c read 0x40 0x00 2
+```
+
+| Expected reply | Meaning | Action |
+|---|---|---|
+| `0x39 0x9F` (or `0x39 0x9f`) | INA219 default config register (39.9F = 14580) | Correct, leave `SKYNOID_INA219_ADDR 0x40` |
+| `0x01 0x11` | PCA9685 MODE1 register (auto-increment enabled, sleep mode) | Unplug the PCA9685 board; rescan; check 0x44, 0x45 for the INA219 |
+| `read failed or no ACK` | Nothing answers write-then-read at 0x40, or bus is held | Try `i2c probe 0x40` first to confirm the device is still visible |
+
+Once confirmed, replace this section with "confirmed INA219 at 0x40" and remove the `#verify` note in `app_config.h`.

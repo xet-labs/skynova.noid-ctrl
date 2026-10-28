@@ -42,12 +42,16 @@ typedef enum {
     SKT_EV_ECHO,       /* printable byte stored: echo it back to the terminal */
     SKT_EV_ERASE,      /* last character removed: send "\b \b" */
     SKT_EV_LINE,       /* Enter pressed: line.buf holds the NUL-terminated line (may be empty) */
-    SKT_EV_TOO_LONG    /* Enter pressed after more than SKT_LINE_MAX characters: line dropped */
+    SKT_EV_TOO_LONG,   /* Enter pressed after more than SKT_LINE_MAX characters: line dropped */
+    SKT_EV_REPLACE     /* arrow key (up): line replaced with previous command */
 } skt_event_t;
 
 typedef struct {
     char    buf[SKT_LINE_MAX + 1];  /* the line being typed, always NUL-terminated after Enter */
     size_t  n;                      /* characters stored so far */
+    char    prev[SKT_LINE_MAX + 1]; /* previous executed line */
+    size_t  prev_len;               /* length of previous line */
+    size_t  erased;                 /* characters to erase on screen (for SKT_EV_REPLACE) */
     uint8_t esc;                    /* inside an arrow-key style escape sequence (internal) */
     bool    overflow;               /* line too long: ignore everything until Enter */
     bool    last_cr;                /* previous byte was CR, so a following LF is the same Enter */

@@ -102,6 +102,33 @@ static void test_line_ignores_arrow_keys(void)
     TEST_ASSERT_EQUAL_STRING("abcdef", l.buf);
 }
 
+static void test_line_up_arrow_recalls_previous_command(void)
+{
+    skt_line_t l; counts_t c = {0}; skt_line_init(&l);
+    feed_str(&l, "status\r", &c);
+    TEST_ASSERT_EQUAL_STRING("status", l.buf);
+
+    /* Up arrow recalls "status" */
+    skt_event_t ev = feed_str(&l, "\x1b[A", &c);
+    TEST_ASSERT_EQUAL_INT(SKT_EV_REPLACE, ev);
+    TEST_ASSERT_EQUAL_STRING("status", l.buf);
+    TEST_ASSERT_EQUAL_UINT(0, l.erased);
+
+    /* Typing partial then up arrow replaces it and notes erased count */
+    feed_str(&l, "\r", &c);
+    feed_str(&l, "xyz", &c);
+    ev = feed_str(&l, "\x1b[A", &c);
+    TEST_ASSERT_EQUAL_INT(SKT_EV_REPLACE, ev);
+    TEST_ASSERT_EQUAL_STRING("status", l.buf);
+    TEST_ASSERT_EQUAL_UINT(3, l.erased);
+
+    /* Down arrow clears */
+    ev = feed_str(&l, "\x1b[B", &c);
+    TEST_ASSERT_EQUAL_INT(SKT_EV_REPLACE, ev);
+    TEST_ASSERT_EQUAL_STRING("", l.buf);
+    TEST_ASSERT_EQUAL_UINT(6, l.erased);
+}
+
 static void test_line_ignores_tab_and_control_bytes(void)
 {
     skt_line_t l; counts_t c = {0}; skt_line_init(&l);
@@ -223,6 +250,7 @@ int main(void)
     RUN_TEST(test_line_backspace);
     RUN_TEST(test_line_backspace_on_empty_line);
     RUN_TEST(test_line_ignores_arrow_keys);
+    RUN_TEST(test_line_up_arrow_recalls_previous_command);
     RUN_TEST(test_line_ignores_tab_and_control_bytes);
     RUN_TEST(test_line_exactly_max_length_is_accepted);
     RUN_TEST(test_line_too_long_is_dropped_then_recovers);

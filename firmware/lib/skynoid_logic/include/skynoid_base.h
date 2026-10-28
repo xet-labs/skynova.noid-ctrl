@@ -51,12 +51,15 @@ enum { SKB_FAULT_NONE = 0, SKB_FAULT_BATT_CRIT = 1, SKB_FAULT_STALL_HARD = 2 };
  * (reasons 1 stuck, 2 saturated, from the cliff logic). The battery sensor (INA219) is index 4 and
  * reports reason 3 = no reading (added 2026-10-26, claude-chat_a7d3; no new message id or field). */
 enum { SKB_SENSOR_BATT = 4 };
+/* Touch pads (step F, 2026-10-28, claude-chat_a7d3): a pad that stays down too long is reported as SENSOR_FAULT with
+ * sensor = SKB_SENSOR_TOUCH0 + zone (5 head, 6 hand_l, 7 hand_r, 8 extra) and reason 1 (stuck). */
+enum { SKB_SENSOR_TOUCH0 = 5 };
 enum { SKB_SENSOR_REASON_STUCK = 1, SKB_SENSOR_REASON_SATURATED = 2, SKB_SENSOR_REASON_NO_READING = 3 };
 
 /* Event ids = the EVT msg ids of protocol-v0 section 6. */
 enum { SKB_EV_CLIFF = 1, SKB_EV_HAZARD_CLEARED = 2, SKB_EV_BATT_LOW = 3, SKB_EV_BATT_CRIT = 4,
-       SKB_EV_DRIVE_EXPIRED = 5, SKB_EV_STALL = 6, SKB_EV_NODE_FAULT = 8, SKB_EV_LINK_LOST = 9,
-       SKB_EV_SENSOR_FAULT = 10 };
+       SKB_EV_DRIVE_EXPIRED = 5, SKB_EV_STALL = 6, SKB_EV_TOUCH = 7, SKB_EV_NODE_FAULT = 8,
+       SKB_EV_LINK_LOST = 9, SKB_EV_SENSOR_FAULT = 10 };   /* SKB_EV_TOUCH: a = zone, b = 1 down / 0 up; not made by the base logic, posted by src/touch.c */
 
 typedef struct {
     uint8_t  id;      /* SKB_EV_* */

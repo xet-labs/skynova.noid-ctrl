@@ -19,7 +19,7 @@
 #include "skynoid_core.h"
 
 #define TICK_MS 20
-#define BUZZER_ACTIVE_LEVEL 1
+#define BUZZER_ACTIVE_LEVEL 0
 
 static volatile uint8_t s_pattern = BUZ_OFF;
 static volatile uint32_t s_pattern_start_ms;

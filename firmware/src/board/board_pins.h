@@ -26,24 +26,25 @@
 #define ADC_CH_IR_REAR_RIGHT   7
 #define PIN_MOTOR_IS       33   /* BTS7960 IS pins, diode-OR-ed; optional until wired */
 #define ADC_CH_MOTOR_IS        5
-#define PIN_ACS712         32   /* servo rail current (upper functions); not used yet */
+#define PIN_ACS712         32   /* servo rail current (ACS712 behind a divider); read by the `acs` console command, no limits use it yet */
+#define ADC_CH_ACS712          4    /* GPIO32 = ADC1 channel 4 (pins.yaml adc1_channel_of_gpio) */
 
 /* ---- misc outputs and inputs ----------------------------------------------- */
 #define PIN_BUZZER         23
 #define PIN_STATUS_LED      2
 #define PIN_UART2_TX       5   /* UART2 default pair (step 1.7): the console when UART_CONSOLE_NUM=2, or the link when UART_LINK_NUM=2 */
 #define PIN_UART2_RX      15
+#define PIN_UART0_TX        1
+#define PIN_UART0_RX        3
 #define PIN_CONSOLE_TX     PIN_UART2_TX   /* old names, kept as aliases (not in the pin lists below) */
 #define PIN_CONSOLE_RX     PIN_UART2_RX
+#define PIN_I2C_SDA        21
+#define PIN_I2C_SCL        22
 #define PIN_PCA9685_OE      4   /* upper functions; not used yet */
 #define PIN_TOUCH_HEAD     13
 #define PIN_TOUCH_HAND_L   18
 #define PIN_TOUCH_HAND_R   19
 #define PIN_TOUCH_EXTRA    17
-#define PIN_I2C_SDA        21
-#define PIN_I2C_SCL        22
-#define PIN_UART0_TX        1
-#define PIN_UART0_RX        3
 
 /* ---- compile-time checks ----------------------------------------------------
  * Trick: the sum of distinct powers of two equals their OR; a repeated pin makes

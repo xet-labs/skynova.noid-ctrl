@@ -20,6 +20,7 @@
 
 #include "base.h"
 #include "console/console_uart.h"
+#include "core/logger.h"
 #include "hal.h"
 
 void app_main(void)
@@ -28,13 +29,11 @@ void app_main(void)
      * base_start() must run before any frame can reach the dispatcher: base_cmd_* take its mutex.
      * Added 2026-10-25 by claude-code_c9a1; before this the base layer was never started. */
     hal_motor_init();
+    hal_servo_oe_safe();               /* servo outputs disabled (GPIO4 high) before anything else can run */
     base_start();
+    console_start();                   /* step 1.3b: UART at baud + logger task + console */
 
-    /* printf (not ESP_LOG) on purpose: this is the one line a human reads first.
-     * It becomes a proper log call in step 1.3c when the logger task exists. */
-    printf("skynoid single boot, reset_reason=%d\n", (int)esp_reset_reason());
-
-    console_start();                   /* step 1.3b: UART0 at 460800 + the console task */
+    LOGI("skynoid single boot, reset_reason=%d", (int)esp_reset_reason());
 
     /* The 1 Hz blink loop of step 1.1 is gone: GPIO2 (PIN_STATUS_LED) is now driven by the indicator task
      * (hal_indicator.c, LED mode follows the base state), and two writers would fight. app_main may return;

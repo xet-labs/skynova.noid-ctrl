@@ -136,6 +136,7 @@ int skd_build_event(uint8_t out[2], uint8_t *msg, const skb_event_t *ev)
     case SKB_EV_LINK_LOST:
         return 0;
     case SKB_EV_SENSOR_FAULT:
+    case SKB_EV_TOUCH:                  /* zone u8, down u8 (1 down, 0 up) */
         out[0] = (uint8_t)ev->a;
         out[1] = ev->b;
         return 2;

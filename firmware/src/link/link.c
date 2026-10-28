@@ -126,6 +126,15 @@ void link_init(void)
 
 bool link_session_active(void) { return s_session.active; }
 
+/* Step F: live events from other tasks (touch). Only while a session runs; see link.h. */
+bool link_post_live_event(uint8_t id, uint16_t a, uint8_t b)
+{
+    if (!s_session.active) { return false; }
+    const skb_event_t ev = { .id = id, .a = a, .b = b };
+    on_base_event(&ev);
+    return true;
+}
+
 bool link_send(uint8_t type, uint8_t msg, const uint8_t *payload, uint16_t len, uint16_t ack)
 {
     if (len > SKW_MAX_PAYLOAD || (len > 0 && payload == NULL)) { return false; }

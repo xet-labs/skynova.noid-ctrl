@@ -337,6 +337,19 @@ static void test_every_event_has_the_payload_of_the_spec(void)
     TEST_ASSERT_EQUAL_INT(-1, skd_build_event(out, &msg, &e));
 }
 
+static void test_touch_event_is_zone_then_down_flag_msg_7(void)
+{
+    uint8_t out[2] = {0xAA, 0xAA}; uint8_t msg = 0;
+    skb_event_t e = { .id = SKB_EV_TOUCH, .a = 2, .b = 1 };       /* hand_r pressed */
+    TEST_ASSERT_EQUAL_INT(2, skd_build_event(out, &msg, &e));
+    TEST_ASSERT_EQUAL_INT(7, msg);
+    TEST_ASSERT_EQUAL_INT(2, out[0]); TEST_ASSERT_EQUAL_INT(1, out[1]);
+    e.a = 0; e.b = 0;                                             /* head released */
+    TEST_ASSERT_EQUAL_INT(2, skd_build_event(out, &msg, &e));
+    TEST_ASSERT_EQUAL_INT(7, msg);
+    TEST_ASSERT_EQUAL_INT(0, out[0]); TEST_ASSERT_EQUAL_INT(0, out[1]);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -361,5 +374,6 @@ int main(void)
     RUN_TEST(test_status_packs_17_bytes_in_spec_order);
     RUN_TEST(test_cliff_event_matches_the_spec_row);
     RUN_TEST(test_every_event_has_the_payload_of_the_spec);
+    RUN_TEST(test_touch_event_is_zone_then_down_flag_msg_7);
     return UNITY_END();
 }

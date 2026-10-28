@@ -1,5 +1,5 @@
 /*
- * hal_sense.c - ADC and I2C drivers: IR sensors, motor current, INA219 battery voltage.
+ * hal_sense.c - ADC and I2C drivers: IR sensors, motor current, servo rail current (ACS712), INA219 battery voltage.
  *
  * Purpose : turn pins and buses into numbers. No decisions here (conventions: drivers do no thinking).
  * Called by: base.c (safety and power tasks), later the console (i2c scan) and the device registry.
@@ -46,7 +46,7 @@ void hal_adc_init(void)
      * with a multimeter; a reading stuck near 4095 is reported as a sensor fault by the cliff logic). */
     const adc_oneshot_chan_cfg_t chan = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_12 };
     static const int channels[] = { ADC_CH_IR_FRONT_LEFT, ADC_CH_IR_FRONT_RIGHT, ADC_CH_IR_REAR_LEFT,
-                                    ADC_CH_IR_REAR_RIGHT, ADC_CH_MOTOR_IS };
+                                    ADC_CH_IR_REAR_RIGHT, ADC_CH_MOTOR_IS, ADC_CH_ACS712 };
     for (size_t i = 0; i < sizeof channels / sizeof channels[0]; i++) {
         if (adc_oneshot_config_channel(s_adc, (adc_channel_t)channels[i], &chan) != ESP_OK) {
             ESP_LOGE(TAG, "adc channel %d config failed", channels[i]);
@@ -99,29 +99,58 @@ bool hal_i2c_probe(uint8_t addr)
     return ack;
 }
 
-/* Generic register read for identity checks (devices / selftest). The INA219 already owns a device handle at
- * SKYNOID_INA219_ADDR, so that address reuses it; any other address gets a temporary handle that is removed again.
- * Reads len bytes after writing one register byte. No ACK, a busy bus or a timeout all return false. */
-bool hal_i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
+/* Handle cache for every address except the INA219 (which owns s_ina). Creating and deleting a device handle per
+ * transfer is wasteful and fragments the heap; the VL53L0X driver alone makes about 15 transfers per measurement.
+ * A handle for an address that does not answer is harmless: nothing is sent when it is created. */
+#define I2C_CACHE_N 8
+static struct { uint8_t addr; i2c_master_dev_handle_t dev; } s_cache[I2C_CACHE_N];
+
+/* Caller holds s_i2c_lock. Returns the handle for addr, or NULL (no bus, or the cache is full). */
+static i2c_master_dev_handle_t dev_for(uint8_t addr)
 {
-    if (s_bus == NULL || buf == NULL || len == 0) { return false; }
-    if (xSemaphoreTake(s_i2c_lock, pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != pdTRUE) { return false; }
-    i2c_master_dev_handle_t dev = NULL;
-    bool temp = false;
-    if (addr == SKYNOID_INA219_ADDR && s_ina != NULL) {
-        dev = s_ina;
-    } else {
+    if (addr == SKYNOID_INA219_ADDR && s_ina != NULL) { return s_ina; }
+    for (size_t i = 0; i < I2C_CACHE_N; i++) {
+        if (s_cache[i].dev != NULL && s_cache[i].addr == addr) { return s_cache[i].dev; }
+    }
+    for (size_t i = 0; i < I2C_CACHE_N; i++) {
+        if (s_cache[i].dev != NULL) { continue; }
         const i2c_device_config_t cfg = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             .device_address = addr,
             .scl_speed_hz = I2C_SPEED_HZ,
         };
-        if (i2c_master_bus_add_device(s_bus, &cfg, &dev) != ESP_OK) { dev = NULL; }
-        temp = (dev != NULL);
+        if (i2c_master_bus_add_device(s_bus, &cfg, &s_cache[i].dev) != ESP_OK) { s_cache[i].dev = NULL; return NULL; }
+        s_cache[i].addr = addr;
+        return s_cache[i].dev;
     }
+    return NULL;
+}
+
+/* Generic register read for identity checks (devices / selftest) and drivers (VL53L0X).
+ * Reads len bytes after writing one register byte. No ACK, a busy bus, a full handle cache or a timeout all
+ * return false. */
+bool hal_i2c_read_reg(uint8_t addr, uint8_t reg, uint8_t *buf, size_t len)
+{
+    if (s_bus == NULL || buf == NULL || len == 0) { return false; }
+    if (xSemaphoreTake(s_i2c_lock, pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != pdTRUE) { return false; }
+    i2c_master_dev_handle_t dev = dev_for(addr);
     bool ok = false;
     if (dev != NULL) { ok = (i2c_master_transmit_receive(dev, &reg, 1, buf, len, I2C_TIMEOUT_MS) == ESP_OK); }
-    if (temp) { (void)i2c_master_bus_rm_device(dev); }
+    xSemaphoreGive(s_i2c_lock);
+    return ok;
+}
+
+/* Register write: one register byte followed by up to 8 data bytes in a single transfer. */
+bool hal_i2c_write_reg(uint8_t addr, uint8_t reg, const uint8_t *data, size_t len)
+{
+    uint8_t frame[9];
+    if (s_bus == NULL || (len > 0 && data == NULL) || len > sizeof frame - 1) { return false; }
+    frame[0] = reg;
+    for (size_t i = 0; i < len; i++) { frame[1 + i] = data[i]; }
+    if (xSemaphoreTake(s_i2c_lock, pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != pdTRUE) { return false; }
+    i2c_master_dev_handle_t dev = dev_for(addr);
+    bool ok = false;
+    if (dev != NULL) { ok = (i2c_master_transmit(dev, frame, 1 + len, I2C_TIMEOUT_MS) == ESP_OK); }
     xSemaphoreGive(s_i2c_lock);
     return ok;
 }
